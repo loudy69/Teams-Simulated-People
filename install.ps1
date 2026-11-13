@@ -21,6 +21,8 @@ if (-not $edge) { Write-Warning 'Microsoft Edge not found. Install Edge, or set 
 Write-Host 'Installing npm dependencies...'
 npm install --omit=dev --no-audit --no-fund
 if ($LASTEXITCODE -ne 0) { throw 'npm install failed' }
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) { Write-Host 'Installing Python (needed for neural voices)...'; winget install -e --id Python.Python.3.12 --accept-source-agreements --accept-package-agreements; Write-Warning 'Python installed - open a NEW terminal and re-run Install.cmd to finish.' }
+else { Write-Host 'Installing neural voice engine (edge-tts)...'; python -m pip install --quiet edge-tts }
 
 $lnk = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Teams Demo Attendees.lnk'
 $s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)

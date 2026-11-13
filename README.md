@@ -66,3 +66,12 @@ To change the watermark text, edit `scripts/make-watermark.js`, delete `clips/wa
 
 For demos and testing only. Join only meetings you own or are authorised to use, and keep the watermark on. The attendees are not real people and must not be used to deceive.
 Microsoft Teams and Microsoft are trademarks of Microsoft. This is an unofficial demo tool; the join flow relies on the Teams web UI and may need updating when it changes.
+
+## Voiced conversations (new)
+Pick an **industry** (alphabetical list; Retail and Insurance come with default topic briefs), type a **topic brief**, and once every simulated attendee has been admitted click **Start conversation**.
+
+- An LLM writes one line at a time; each speaker directly responds to the previous one and no two people speak at once (strict turn-taking with natural pauses).
+- Each persona has a distinct neural (non-robotic) voice via Microsoft Edge neural TTS (`pip install edge-tts`, needs Python).
+- Speech is fed to each attendee's browser as a virtual microphone.
+- Set `OPENAI_API_KEY` (or `LLM_API_KEY`, `LLM_ENDPOINT`, `LLM_MODEL`, or `GITHUB_TOKEN`) before starting. `MAX_TURNS` caps the length (default 30).
+- Simulated attendees do not listen to real humans; they only respond to each other.

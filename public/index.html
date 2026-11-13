@@ -21,6 +21,12 @@ li{margin:4px 0}
 <label>Number of simulated people</label>
 <select id="count"></select>
 <button id="join">Join meeting</button><button class="leave" id="leave">Remove all</button>
+<h3>Conversation</h3>
+<label>Meeting industry / tone</label><select id="industry"></select>
+<label>Topic brief</label><textarea id="topic" rows="3" style="width:100%;padding:8px;font-size:15px;box-sizing:border-box" placeholder="Short description of what the meeting is about"></textarea>
+<button id="start" disabled>Start conversation</button><button class="leave" id="stop">Stop</button>
+<div id="cstat" style="margin-top:10px;color:#555"></div>
+<div id="tx" style="margin-top:8px;max-height:260px;overflow:auto;border:1px solid #ddd;padding:8px;display:none"></div>
 <h3>Attendees</h3><ul id="list"></ul>
 <script>
 const sel=document.getElementById('count');
@@ -36,5 +42,16 @@ async function refresh(){
   const [p,s]=await Promise.all([fetch('/api/personas').then(r=>r.json()),fetch('/api/status').then(r=>r.json())]);
   $('list').innerHTML=p.map(x=>`<li><b>${x.name}</b> — ${s[x.id]||'idle'}${x.hasClip?'':' (no video clip yet)'}</li>`).join('');
 }
-setInterval(refresh,2000);refresh();
+fetch('/api/industries').then(r=>r.json()).then(l=>{window.IND=l;l.forEach(i=>$('industry').add(new Option(i.name,i.name)));$('industry').onchange=()=>{const b=IND.find(i=>i.name===$('industry').value).brief;if(b||!$('topic').value)$('topic').value=b;};$('industry').onchange();});
+$('start').onclick=async()=>{const r=await fetch('/api/conversation/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({industry:$('industry').value,topic:$('topic').value})});if(!r.ok)alert((await r.json()).error);};
+$('stop').onclick=()=>fetch('/api/conversation/stop',{method:'POST'});
+const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+async function convo(){
+  const c=await fetch('/api/conversation').then(r=>r.json());
+  $('start').disabled=!c.ready||c.running;
+  $('cstat').textContent=c.error?'Error: '+c.error:c.running?(c.speaking?c.speaking+' is speaking...':'Generating...'):c.ready?'All participants are in the meeting. Ready to start.':'Start becomes available once all participants are admitted.';
+  $('tx').style.display=c.transcript.length?'block':'none';
+  $('tx').innerHTML=c.transcript.map(t=>`<p><b>${esc(t.speaker)}:</b> ${esc(t.text)}</p>`).join('');
+}
+setInterval(refresh,2000);setInterval(convo,1500);refresh();convo();
 </script></body></html>

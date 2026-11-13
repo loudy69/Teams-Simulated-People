@@ -3,11 +3,33 @@ const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 const personas = require('./personas.json');
+const convo = require('./conversation');
 
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Virtual microphone: getUserMedia gets video from the fake device plus audio from a WebAudio destination we can play speech into
+const AUDIO_INIT = `(() => {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ac = new AC(); const dest = ac.createMediaStreamDestination();
+  window.__vmic = { ac, dest };
+  window.__speak = async (b64) => {
+    await ac.resume();
+    const bin = atob(b64); const u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    const buf = await ac.decodeAudioData(u8.buffer);
+    const src = ac.createBufferSource(); src.buffer = buf; src.connect(dest);
+    await new Promise(r => { src.onended = r; src.start(); });
+  };
+  const md = navigator.mediaDevices; const orig = md.getUserMedia.bind(md);
+  md.getUserMedia = async (c) => {
+    const wantAudio = c && c.audio;
+    const s = await orig({ ...c, audio: false });
+    if (wantAudio) dest.stream.getAudioTracks().forEach(t => s.addTrack(t));
+    return s;
+  };
+})();`;
 const sessions = new Map(); // personaId -> { status, browser }
 const setStatus = (id, status) => { const s = sessions.get(id) || {}; s.status = status; sessions.set(id, s); console.log(id, status); };
 
@@ -38,8 +60,10 @@ async function join(persona, url) {
   const browser = await chromium.launch({ channel: process.env.BROWSER_CHANNEL || 'msedge', headless: false, args });
   sessions.set(persona.id, { status: 'launching', browser });
   try {
-    const ctx = await browser.newContext({ permissions: ['camera'], viewport: { width: 1000, height: 700 } });
+    const ctx = await browser.newContext({ permissions: ['camera', 'microphone'], viewport: { width: 1000, height: 700 } });
+    await ctx.addInitScript(AUDIO_INIT);
     const page = await ctx.newPage();
+    sessions.get(persona.id).page = page;
     setStatus(persona.id, 'opening meeting link');
     await page.goto(url, { waitUntil: 'domcontentloaded' });
     // Dismiss any "Open Microsoft Teams?" desktop prompt, then force the web option
@@ -49,11 +73,16 @@ async function join(persona, url) {
     const nameBox = page.locator('input[data-tid="prejoin-display-name-input"], input[placeholder*="name" i]').first();
     await nameBox.waitFor({ timeout: 60000 });
     await nameBox.fill(persona.name);
-    setStatus(persona.id, 'setting audio to No audio');
-    await clickFirst(page, ['[data-tid="prejoin-audio-option-noaudio"]', 'label:has-text("Don\'t use audio")', 'label:has-text("No audio")', 'text=Don\'t use audio', 'text=No audio'], 8000);
+    // Computer audio ON with the microphone enabled (fed by the injected virtual mic)
+    await clickFirst(page, ['[data-tid=\"prejoin-audio-option-computer\"]', 'label:has-text(\"Computer audio\")'], 5000);
     setStatus(persona.id, 'joining');
     await clickFirst(page, ['button:has-text("Join now")', '[data-tid="prejoin-join-button"]'], 30000);
-    setStatus(persona.id, 'joined (or waiting in lobby - admit from the host)');
+    setStatus(persona.id, 'waiting in lobby - admit from the host');
+    const inMeeting = page.locator('[data-tid=\"hangup-button\"], #hangup-button, button[aria-label^=\"Leave\"]').first();
+    inMeeting.waitFor({ timeout: 0 }).then(async () => {
+      setStatus(persona.id, 'in meeting');
+      await page.locator('#microphone-button, [data-tid=\"toggle-mute\"]').first().evaluate(b => { if (b.getAttribute('aria-pressed') === 'false' || /unmute/i.test(b.getAttribute('aria-label') || '')) b.click(); }).catch(() => {});
+    }).catch(() => {});
     await page.waitForEvent('close', { timeout: 0 }).catch(() => {});
   } catch (e) {
     setStatus(persona.id, `error: ${e.message.split('\n')[0]}`);
@@ -78,5 +107,26 @@ app.post('/api/leave', async (req, res) => {
   sessions.clear();
   res.json({ ok: true });
 });
+
+const ind = Object.keys(convo.INDUSTRIES).sort((a, b) => a.localeCompare(b));
+app.get('/api/industries', (req, res) => res.json(ind.map(n => ({ name: n, brief: convo.INDUSTRIES[n] }))));
+app.get('/api/conversation', (req, res) => res.json({ ...convo.state, ready: inMeeting().length > 0 && allJoined() }));
+
+const inMeeting = () => personas.filter(p => sessions.get(p.id)?.status === 'in meeting');
+const allJoined = () => sessions.size > 0 && [...sessions.values()].every(s => s.status === 'in meeting');
+
+app.post('/api/conversation/start', (req, res) => {
+  const { industry, topic } = req.body;
+  if (convo.state.running) return res.status(409).json({ error: 'Conversation already running' });
+  if (!allJoined()) return res.status(409).json({ error: 'Wait until all participants are admitted into the meeting' });
+  if (!topic || !topic.trim()) return res.status(400).json({ error: 'Enter a topic brief' });
+  const people = inMeeting();
+  convo.run({
+    industry: industry || 'General business', topic: topic.trim(), people,
+    speak: async (id, buf) => { await sessions.get(id).page.evaluate(b => window.__speak(b), buf.toString('base64')); }
+  });
+  res.json({ ok: true });
+});
+app.post('/api/conversation/stop', (req, res) => { convo.state.stop = true; res.json({ ok: true }); });
 
 app.listen(3000, () => console.log('Open http://localhost:3000'));
