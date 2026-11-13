@@ -68,7 +68,11 @@ For demos and testing only. Join only meetings you own or are authorised to use,
 Microsoft Teams and Microsoft are trademarks of Microsoft. This is an unofficial demo tool; the join flow relies on the Teams web UI and may need updating when it changes.
 
 ## Voiced conversations (new)
-Pick an **industry** (alphabetical list; Retail and Insurance come with default topic briefs), type a **topic brief**, and once every simulated attendee has been admitted click **Start conversation**.
+Pick an **industry** (alphabetical list; Retail and Insurance come with default topic briefs), type a **topic brief**, set the **meeting length** in minutes (the conversation wraps up and closes at that time; 0 = no limit), and once every simulated attendee has been admitted click **Start conversation**.
+
+**Names:** each selected participant has a suggested name in an editable box - overwrite it before joining and the new name is used in Teams and in the dialogue.
+
+**Audio:** guests join with Computer audio on and the microphone unmuted; each voice is played through a virtual microphone, so the host hears (and can record) it like any other participant. The host must admit the guests and not mute them.
 
 - An LLM writes one line at a time; each speaker directly responds to the previous one and no two people speak at once (strict turn-taking with natural pauses).
 - Each persona has a distinct neural (non-robotic) voice via Microsoft Edge neural TTS (`pip install edge-tts`, needs Python).

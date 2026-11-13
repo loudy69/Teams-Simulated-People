@@ -105,7 +105,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const state = { running: false, stop: false, transcript: [], error: null, speaking: null };
 
-async function run({ industry, topic, people, speak }) {
+async function run({ industry, topic, people, speak, ...opts }) {
   // people: [{id,name,voice}] who are in the meeting; speak(id, mp3Buffer) resolves when audio finished
   Object.assign(state, { running: true, stop: false, transcript: [], error: null, speaking: null });
   try {
@@ -119,7 +119,9 @@ async function run({ industry, topic, people, speak }) {
     } catch (e) { console.warn('cast generation skipped:', e.message); }
     const roles = Object.fromEntries((cast.cast || []).map(c => [c.name, c]));
     const castText = names.map(n => `- ${n}: ${roles[n]?.role || 'Team member'}; ${roles[n]?.stance || ''}`).join('\n');
-    const maxTurns = Math.min(60, parseInt(process.env.MAX_TURNS, 10) || 30);
+    const minutes = Math.min(60, Math.max(0, parseFloat(opts.minutes) || 0));
+    const maxTurns = minutes ? 60 : Math.min(60, parseInt(process.env.MAX_TURNS, 10) || 30);
+    const deadline = minutes ? Date.now() + minutes * 60000 : 0;
 
     // The speaker is chosen in code (never the previous speaker, rarely the one before), so the model only writes text
     const pickSpeaker = () => {
@@ -147,6 +149,7 @@ async function run({ industry, topic, people, speak }) {
       const sp = pickSpeaker();
       const recent = state.transcript.slice(-8).map(t => `${t.speaker}: ${t.text}`).join('\n');
       const n = state.transcript.length;
+      const final = !!deadline && n > 0 && Date.now() > deadline - 35000; // closing line is generated while the previous one plays
       const me = roles[sp.name];
       let text = '';
       const angles = ['raise a specific concern', 'ask a pointed question', 'propose a concrete next action', 'share a relevant example or figure', 'respectfully disagree and explain why', 'summarise and ask for a decision'];
@@ -155,20 +158,21 @@ async function run({ industry, topic, people, speak }) {
       for (let i = 0; i < 6 && (text.length < 8 || tooSimilar(text)); i++) {
         const angle = n === 0 ? '' : ` This time, ${angles[(n + i) % angles.length]}. Do not repeat or paraphrase anything already said.`;
         text = clean(await llm([
-          { role: 'system', content: `You are ${sp.name}${me?.role ? ', ' + me.role : ''}, in a realistic ${industry} business meeting on Microsoft Teams. ${me?.stance ? 'Your view: ' + me.stance + ' ' : ''}Attendees:\n${castText}\n${n === 0 ? 'You are chairing: open the meeting, greet everyone and set the agenda.' : `Respond directly to ${last.speaker}'s last point, then add something new (agree, challenge, ask a question or propose an action).`} ${n >= maxTurns - 2 ? 'Start wrapping up with actions and thanks.' : ''} Speak naturally and conversationally in 1-3 short sentences, maximum 45 words. Reply with ONLY the words you say: no name prefix, no quotes, no stage directions.${angle}` },
+          { role: 'system', content: `You are ${sp.name}${me?.role ? ', ' + me.role : ''}, in a realistic ${industry} business meeting on Microsoft Teams. ${me?.stance ? 'Your view: ' + me.stance + ' ' : ''}Attendees:\n${castText}\n${n === 0 ? 'You are chairing: open the meeting, greet everyone and set the agenda.' : `Respond directly to ${last.speaker}'s last point, then add something new (agree, challenge, ask a question or propose an action).`} ${final || n >= maxTurns - 2 ? 'This is the closing remark: thank everyone, state the key next action and end the meeting.' : deadline ? `The meeting is short (${minutes} minutes), so keep it focused and move quickly to decisions.` : ''} Speak naturally and conversationally in 1-3 short sentences, maximum 45 words. Reply with ONLY the words you say: no name prefix, no quotes, no stage directions.${angle}` },
           { role: 'user', content: `Topic brief: ${topic}\n\nConversation so far:\n${recent || '(meeting just started)'}\n\n${sp.name}:` }
         ], true), sp.name);
       }
       if (text.length < 8) throw new Error('LLM returned no usable dialogue');
-      return { sp, text, audio: tts(text, sp.voice) };
+      return { sp, text, final, audio: tts(text, sp.voice) };
     };
     let pending = nextLine();
     while (!state.stop && state.transcript.length < maxTurns) {
-      const { sp, text, audio } = await pending;
+      const { sp, text, audio, final } = await pending;
       const buf = await audio;
       state.transcript.push({ speaker: sp.name, text });
       // generate the next line while this one is spoken, but its text depends on this line
-      pending = state.transcript.length < maxTurns ? nextLine() : null;
+      pending = !final && state.transcript.length < maxTurns ? nextLine() : null;
+      pending?.catch(() => {});
       state.speaking = sp.name;
       await speak(sp.id, buf); // returns after playback ends: nobody else speaks meanwhile
       state.speaking = null;

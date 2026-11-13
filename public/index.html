@@ -20,9 +20,13 @@ li{margin:4px 0}
 <label>Passcode</label><input id="pw" placeholder="e.g. aBcDeF">
 <label>Number of simulated people</label>
 <select id="count"></select>
+<label>Participant names (suggested names can be overwritten)</label>
+<div id="names" style="display:grid;grid-template-columns:1fr 1fr;gap:6px"></div>
 <button id="join">Join meeting</button><button class="leave" id="leave">Remove all</button>
 <h3>Conversation</h3>
 <label>Meeting industry / tone</label><select id="industry"></select>
+<label>Meeting length (minutes, 0 = no limit)</label>
+<input id="mins" type="number" min="0" max="60" value="3" style="width:100px">
 <label>Topic brief</label><textarea id="topic" rows="3" style="width:100%;padding:8px;font-size:15px;box-sizing:border-box" placeholder="Short description of what the meeting is about"></textarea>
 <button id="start" disabled>Start conversation</button><button class="leave" id="stop">Stop</button>
 <div id="cstat" style="margin-top:10px;color:#555"></div>
@@ -32,18 +36,28 @@ li{margin:4px 0}
 const sel=document.getElementById('count');
 for(let i=1;i<=12;i++)sel.add(new Option(i,i));
 const $=id=>document.getElementById(id);
+let PERS=[];
+const nameBoxes=()=>[...document.querySelectorAll('#names input')];
+function renderNames(){
+  const old=nameBoxes().map(i=>i.value);
+  $('names').innerHTML='';
+  PERS.slice(0,+sel.value).forEach((p,i)=>{const e=document.createElement('input');e.value=old[i]||p.name;e.placeholder=p.name;e.title=p.id;$('names').appendChild(e);});
+}
+fetch('/api/personas').then(r=>r.json()).then(p=>{PERS=p;renderNames();});
+sel.onchange=renderNames;
 $('join').onclick=async()=>{
   const r=await fetch('/api/join',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({meetingId:$('mid').value,passcode:$('pw').value,count:sel.value})});
+    body:JSON.stringify({meetingId:$('mid').value,passcode:$('pw').value,count:sel.value,names:nameBoxes().map(i=>i.value)})});
   if(!r.ok)alert((await r.json()).error);
 };
 $('leave').onclick=()=>fetch('/api/leave',{method:'POST'});
 async function refresh(){
-  const [p,s]=await Promise.all([fetch('/api/personas').then(r=>r.json()),fetch('/api/status').then(r=>r.json())]);
-  $('list').innerHTML=p.map(x=>`<li><b>${x.name}</b> — ${s[x.id]||'idle'}${x.hasClip?'':' (no video clip yet)'}</li>`).join('');
+  const [p,s,nm]=await Promise.all([fetch('/api/personas').then(r=>r.json()),fetch('/api/status').then(r=>r.json()),fetch('/api/names').then(r=>r.json())]);
+  const esc=t=>String(t).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  $('list').innerHTML=p.map(x=>`<li><b>${esc(nm[x.id]||x.name)}</b> — ${s[x.id]||'idle'}${x.hasClip?'':' (no video clip yet)'}</li>`).join('');
 }
 fetch('/api/industries').then(r=>r.json()).then(l=>{window.IND=l;l.forEach(i=>$('industry').add(new Option(i.name,i.name)));$('industry').onchange=()=>{const b=IND.find(i=>i.name===$('industry').value).brief;if(b||!$('topic').value)$('topic').value=b;};$('industry').onchange();});
-$('start').onclick=async()=>{const r=await fetch('/api/conversation/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({industry:$('industry').value,topic:$('topic').value})});if(!r.ok)alert((await r.json()).error);};
+$('start').onclick=async()=>{const r=await fetch('/api/conversation/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({industry:$('industry').value,topic:$('topic').value,minutes:$('mins').value})});if(!r.ok)alert((await r.json()).error);};
 $('stop').onclick=()=>fetch('/api/conversation/stop',{method:'POST'});
 const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 async function convo(){
