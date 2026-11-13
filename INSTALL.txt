@@ -1,0 +1,14 @@
+Teams Demo Attendees - portable install
+=======================================
+Requires: Windows 10/11, Microsoft Edge, internet access (first install only).
+
+1. Unzip this folder anywhere.
+2. Double-click Install.cmd (installs Node.js LTS via winget if missing, then npm packages,
+   and creates a desktop shortcut).
+3. Double-click Start.cmd (or the desktop shortcut). The UI opens at http://localhost:3000.
+4. Enter Meeting ID + Passcode, choose 1-12 people, click Join.
+
+Notes
+- Clips are pre-built (clips\*.mjpeg, watermarked "Teams Demo - these are not real people"); no ffmpeg needed.
+- Meeting must allow anonymous join; admit guests from the lobby. Attendees have no audio.
+- Use BROWSER_CHANNEL=chrome to use Chrome instead of Edge.

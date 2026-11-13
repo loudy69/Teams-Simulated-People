@@ -1,0 +1,40 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Teams Demo Attendees</title>
+<style>
+body{font-family:Segoe UI,sans-serif;max-width:640px;margin:40px auto;padding:0 16px}
+label{display:block;margin:14px 0 4px;font-weight:600}
+input,select{width:100%;padding:8px;font-size:15px;box-sizing:border-box}
+button{margin:18px 8px 0 0;padding:10px 18px;font-size:15px;border:0;background:#5b5fc7;color:#fff;border-radius:4px;cursor:pointer}
+button.leave{background:#c4314b}
+li{margin:4px 0}
+</style></head><body>
+<div style="display:flex;align-items:center;gap:14px;margin-bottom:8px">
+  <svg width="36" height="36" viewBox="0 0 23 23"><rect width="11" height="11" fill="#f25022"/><rect x="12" width="11" height="11" fill="#7fba00"/><rect y="12" width="11" height="11" fill="#00a4ef"/><rect x="12" y="12" width="11" height="11" fill="#ffb900"/></svg>
+  <span style="font-size:20px;font-weight:600;color:#5e5e5e">Microsoft</span>
+  <svg width="40" height="40" viewBox="0 0 40 40"><rect width="40" height="40" rx="8" fill="#5b5fc7"/><circle cx="29" cy="11" r="4.5" fill="#a6a9f0"/><rect x="21" y="17" width="14" height="14" rx="4" fill="#7b83eb"/><rect x="5" y="12" width="21" height="20" rx="4" fill="#4f52b2"/><path d="M10 18h11v3h-4v9h-3v-9h-4z" fill="#fff"/></svg>
+  <span style="font-size:20px;font-weight:600;color:#5b5fc7">Teams</span>
+</div>
+<h2>Simulated Teams attendees</h2>
+<p style="color:#a4262c;font-weight:600">Attendees are simulated and watermarked "THESE ARE NOT REAL PEOPLE".</p>
+<label>Meeting ID</label><input id="mid" placeholder="e.g. 123 456 789 012">
+<label>Passcode</label><input id="pw" placeholder="e.g. aBcDeF">
+<label>Number of simulated people</label>
+<select id="count"></select>
+<button id="join">Join meeting</button><button class="leave" id="leave">Remove all</button>
+<h3>Attendees</h3><ul id="list"></ul>
+<script>
+const sel=document.getElementById('count');
+for(let i=1;i<=12;i++)sel.add(new Option(i,i));
+const $=id=>document.getElementById(id);
+$('join').onclick=async()=>{
+  const r=await fetch('/api/join',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({meetingId:$('mid').value,passcode:$('pw').value,count:sel.value})});
+  if(!r.ok)alert((await r.json()).error);
+};
+$('leave').onclick=()=>fetch('/api/leave',{method:'POST'});
+async function refresh(){
+  const [p,s]=await Promise.all([fetch('/api/personas').then(r=>r.json()),fetch('/api/status').then(r=>r.json())]);
+  $('list').innerHTML=p.map(x=>`<li><b>${x.name}</b> — ${s[x.id]||'idle'}${x.hasClip?'':' (no video clip yet)'}</li>`).join('');
+}
+setInterval(refresh,2000);refresh();
+</script></body></html>

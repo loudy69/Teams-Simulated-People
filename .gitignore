@@ -1,0 +1,5 @@
+node_modules/
+clips/raw/
+clips/*.mjpeg
+clips/watermark.png
+*.zip
