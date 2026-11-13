@@ -75,3 +75,6 @@ Pick an **industry** (alphabetical list; Retail and Insurance come with default 
 - Speech is fed to each attendee's browser as a virtual microphone.
 - Set `OPENAI_API_KEY` (or `LLM_API_KEY`, `LLM_ENDPOINT`, `LLM_MODEL`, or `GITHUB_TOKEN`) before starting. `MAX_TURNS` caps the length (default 30).
 - Simulated attendees do not listen to real humans; they only respond to each other.
+
+### Local LLM (Foundry Local)
+If Foundry Local is installed and a chat model is downloaded (e.g. foundry model download qwen2.5-1.5b), the service auto-detects it and uses it for dialogue - no token cost. Override with FOUNDRY_MODEL, or LLM_PROVIDER=cloud to use OPENAI_API_KEY/LLM_API_KEY instead. Voices use free Edge neural TTS (python + edge-tts, installed by install.ps1).

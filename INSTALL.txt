@@ -17,3 +17,5 @@ VOICED CONVERSATIONS
 - Requires Python (installed by Install.cmd) for neural voices, plus an LLM key set before Start.cmd:
     setx OPENAI_API_KEY sk-...   (or LLM_API_KEY / LLM_ENDPOINT / LLM_MODEL for any OpenAI-compatible API)
 - In the UI pick an industry, edit the topic brief, wait until all attendees are admitted, then click Start conversation.
+
+Version 2.0: voiced conversations. Optional: install Foundry Local for token-free dialogue; otherwise set OPENAI_API_KEY.

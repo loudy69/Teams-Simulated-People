@@ -129,4 +129,5 @@ app.post('/api/conversation/start', (req, res) => {
 });
 app.post('/api/conversation/stop', (req, res) => { convo.state.stop = true; res.json({ ok: true }); });
 
-app.listen(3000, () => console.log('Open http://localhost:3000'));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log('Open http://localhost:' + PORT));
