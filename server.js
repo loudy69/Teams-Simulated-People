@@ -26,8 +26,8 @@ const AUDIO_INIT = `(() => {
     const data = new Uint8Array(an.fftSize);
     const iv = setInterval(() => { an.getByteTimeDomainData(data); let m = 0; for (const v of data) m = Math.max(m, Math.abs(v - 128)); window.__vmic.peak = Math.max(window.__vmic.peak, m); }, 50);
     // short lead-in so Teams' voice detection and gain control don't clip the first word
-    await new Promise(r => { src.onended = r; src.start(ac.currentTime + 0.5); });
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => { src.onended = r; src.start(    ac.currentTime + 0.3); });
+        await new Promise(r => setTimeout(r, 150));
     clearInterval(iv);
   };
   // Keep the context running even when the window is in the background

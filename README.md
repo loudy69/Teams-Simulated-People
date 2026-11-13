@@ -82,3 +82,7 @@ Pick an **industry** (alphabetical list; Retail and Insurance come with default 
 
 ### Local LLM (Foundry Local)
 If Foundry Local is installed and a chat model is downloaded (e.g. foundry model download qwen2.5-1.5b), the service auto-detects it and uses it for dialogue - no token cost. Override with FOUNDRY_MODEL, or LLM_PROVIDER=cloud to use OPENAI_API_KEY/LLM_API_KEY instead. Voices use free Edge neural TTS (python + edge-tts, installed by install.ps1).
+
+## GPT Realtime voices
+Set `OPENAI_API_KEY` (or `REALTIME_API_KEY`) to have each participant write and speak their lines with GPT Realtime (default model `gpt-realtime-2.1`, override with `REALTIME_MODEL`; Azure: set `REALTIME_URL`). Each person gets a distinct natural voice, lines stream with ~0.1-0.3 s gaps, and the next line is generated while the current one plays. Without a key (or on error) it falls back to Foundry Local + Edge neural TTS. Disable with `REALTIME=off`.
+

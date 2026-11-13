@@ -20,3 +20,5 @@ VOICED CONVERSATIONS
 - In the UI pick an industry, edit the topic brief, wait until all attendees are admitted, then click Start conversation. Host: admit guests and do not mute them.
 
 Version 2.0: voiced conversations. Optional: install Foundry Local for token-free dialogue; otherwise set OPENAI_API_KEY.
+
+Optional: set OPENAI_API_KEY before starting to use GPT Realtime voices (see README).

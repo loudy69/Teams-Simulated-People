@@ -101,6 +101,50 @@ function tts(text, voice) {
   });
 }
 
+// --- GPT Realtime: writes each line AND speaks it in one streamed call (natural, non-robotic voices) ---
+const FEMALE_EDGE = /Ava|Libby|Natasha|Sonia|Jenny|Aria|Emma|Michelle|Clara|Jane|Sara|Nancy|Ana|Mia|Amber|Ashley|Elizabeth|Maisie|Yan|Xiaoxiao|Neerja|Swara|Katja|Denise|Elvira|Salome/i;
+const RT_FEMALE = ['marin', 'shimmer', 'coral', 'sage', 'alloy', 'ballad'];
+const RT_MALE = ['cedar', 'echo', 'verse', 'ash', 'ballad', 'alloy'];
+function realtimeConfig() {
+  const key = process.env.REALTIME_API_KEY || process.env.OPENAI_API_KEY;
+  if (!key || process.env.REALTIME === 'off') return null;
+  const model = process.env.REALTIME_MODEL || 'gpt-realtime-2.1';
+  const url = process.env.REALTIME_URL || `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`;
+  const headers = process.env.REALTIME_URL && /azure/i.test(process.env.REALTIME_URL) ? { 'api-key': key } : { Authorization: `Bearer ${key}` };
+  return { url, headers };
+}
+function wav(pcm, rate = 24000) {
+  const h = Buffer.alloc(44);
+  h.write('RIFF', 0); h.writeUInt32LE(36 + pcm.length, 4); h.write('WAVEfmt ', 8); h.writeUInt32LE(16, 16);
+  h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22); h.writeUInt32LE(rate, 24); h.writeUInt32LE(rate * 2, 28);
+  h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34); h.write('data', 36); h.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([h, pcm]);
+}
+function realtimeLine(cfg, { voice, instructions, input }) {
+  const WebSocket = require('ws');
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(cfg.url, { headers: cfg.headers });
+    const chunks = []; let transcript = ''; let done = false;
+    const finish = (err, val) => { if (done) return; done = true; clearTimeout(timer); try { ws.close(); } catch {} err ? reject(err) : resolve(val); };
+    const timer = setTimeout(() => finish(new Error('realtime timeout')), 30000);
+    const send = o => ws.send(JSON.stringify(o));
+    ws.on('error', e => finish(e));
+    ws.on('close', () => finish(new Error('realtime closed early')));
+    ws.on('open', () => {
+      send({ type: 'session.update', session: { type: 'realtime', instructions, output_modalities: ['audio'], audio: { output: { format: { type: 'audio/pcm', rate: 24000 }, voice } } } });
+      send({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: input }] } });
+      send({ type: 'response.create' });
+    });
+    ws.on('message', raw => {
+      let m; try { m = JSON.parse(raw); } catch { return; }
+      if (m.type === 'response.output_audio.delta' || m.type === 'response.audio.delta') chunks.push(Buffer.from(m.delta, 'base64'));
+      else if (m.type === 'response.output_audio_transcript.delta' || m.type === 'response.audio_transcript.delta') transcript += m.delta;
+      else if (m.type === 'error') finish(new Error(`realtime: ${m.error?.message || JSON.stringify(m)}`));
+      else if (m.type === 'response.done') chunks.length ? finish(null, { text: transcript.trim(), wav: wav(Buffer.concat(chunks)) }) : finish(new Error('realtime returned no audio'));
+    });
+  });
+}
+
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const state = { running: false, stop: false, transcript: [], error: null, speaking: null };
@@ -121,6 +165,10 @@ async function run({ industry, topic, people, speak, ...opts }) {
     const castText = names.map(n => `- ${n}: ${roles[n]?.role || 'Team member'}; ${roles[n]?.stance || ''}`).join('\n');
     const minutes = Math.min(60, Math.max(0, parseFloat(opts.minutes) || 0));
     const maxTurns = minutes ? 60 : Math.min(60, parseInt(process.env.MAX_TURNS, 10) || 30);
+    const rt = realtimeConfig(); let rtFailed = false;
+    const rtVoice = {}; let fi = 0, mi = 0;
+    people.forEach(p => { rtVoice[p.id] = FEMALE_EDGE.test(p.voice || '') ? RT_FEMALE[fi++ % RT_FEMALE.length] : RT_MALE[mi++ % RT_MALE.length]; });
+    state.engine = rt ? 'gpt-realtime' : 'edge-tts';
     const deadline = minutes ? Date.now() + minutes * 60000 : 0;
 
     // The speaker is chosen in code (never the previous speaker, rarely the one before), so the model only writes text
@@ -155,6 +203,15 @@ async function run({ industry, topic, people, speak, ...opts }) {
       const angles = ['raise a specific concern', 'ask a pointed question', 'propose a concrete next action', 'share a relevant example or figure', 'respectfully disagree and explain why', 'summarise and ask for a decision'];
       const words = s => new Set(s.toLowerCase().match(/[a-z']{4,}/g) || []);
       const tooSimilar = s => state.transcript.slice(-6).some(t => { const a = words(s), b = words(t.text); let k = 0; a.forEach(w => b.has(w) && k++); return k / Math.max(1, Math.min(a.size, b.size)) > 0.6; });
+      if (rt && !rtFailed) {
+        try {
+          const closing = final || n >= maxTurns - 2;
+          const instructions = `You are ${sp.name}${me?.role ? ', ' + me.role : ''}, a real person in a ${industry} business meeting on Microsoft Teams. ${me?.stance ? 'Your view: ' + me.stance + ' ' : ''}Attendees:\n${castText}\nSpeak like a warm, natural human colleague: relaxed pace, contractions, the occasional "right", "so", "look" or brief pause, genuine emotion. Never sound scripted or read out. Say ONLY your own spoken words, 1-3 short sentences, maximum 40 words, no name prefix.`;
+          const input = `Topic brief: ${topic}\n\nConversation so far:\n${recent || '(meeting just started)'}\n\n${n === 0 ? 'You are chairing: open the meeting, greet everyone and set the agenda.' : `Respond directly to ${last.speaker}'s last point, then add something new.${n > 1 ? ' Angle: ' + angles[n % angles.length] + '.' : ''} Do not repeat anything already said.`} ${closing ? 'This is the closing remark: thank everyone, state the key next action and end the meeting.' : deadline ? `The meeting is short (${minutes} minutes); move quickly to decisions.` : ''} Now say your line aloud.`;
+          const r = await realtimeLine(rt, { voice: rtVoice[sp.id], instructions, input });
+          if (r.text.length >= 8) return { sp, text: r.text, final, audio: Promise.resolve(r.wav) };
+        } catch (e) { rtFailed = true; console.warn('Realtime unavailable, falling back to Edge TTS:', e.message); }
+      }
       for (let i = 0; i < 6 && (text.length < 8 || tooSimilar(text)); i++) {
         const angle = n === 0 ? '' : ` This time, ${angles[(n + i) % angles.length]}. Do not repeat or paraphrase anything already said.`;
         text = clean(await llm([
@@ -177,7 +234,7 @@ async function run({ industry, topic, people, speak, ...opts }) {
       await speak(sp.id, buf); // returns after playback ends: nobody else speaks meanwhile
       state.speaking = null;
       if (!pending) break;
-      await sleep(500 + Math.random() * 700);
+      await sleep(rt && !rtFailed ? 80 + Math.random() * 220 : 300 + Math.random() * 400);
     }
   } catch (e) {
     state.error = e.message;
