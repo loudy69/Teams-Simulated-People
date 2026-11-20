@@ -81,7 +81,7 @@ async function setMic(page, wantOn) {
 
 async function join(persona, url) {
   const clip = path.join(__dirname, 'clips', `${persona.id}.mjpeg`);
-  const args = ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required',
+  const args = ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--mute-audio', '--autoplay-policy=no-user-gesture-required',
     '--disable-features=ExternalProtocolDialog,MsEdgeProtocolLaunchPrompt', '--noerrdialogs', '--disable-external-intent-requests'];
   if (fs.existsSync(clip)) args.push(`--use-file-for-fake-video-capture=${clip}`);
   else console.warn(`No clip for ${persona.name} (run fetch-clips + convert); using test pattern.`);
