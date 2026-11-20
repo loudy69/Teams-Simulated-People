@@ -18,9 +18,9 @@ li{margin:4px 0}
 <p style="color:#a4262c;font-weight:600">Attendees are simulated and watermarked "THESE ARE NOT REAL PEOPLE".</p>
 <label>Meeting ID</label><input id="mid" placeholder="e.g. 123 456 789 012">
 <label>Passcode</label><input id="pw" placeholder="e.g. aBcDeF">
-<label>Number of simulated people</label>
+<label>Quick select: first N people (then tick/untick anyone you like, max 12)</label>
 <select id="count"></select>
-<label>Participant names (suggested names can be overwritten)</label>
+<label>Choose participants (tick to include; names can be overwritten)</label>
 <div id="names" style="display:grid;grid-template-columns:1fr 1fr;gap:6px"></div>
 <button id="join">Join meeting</button><button class="leave" id="leave">Remove all</button>
 <h3>Conversation</h3>
@@ -44,17 +44,22 @@ const sel=document.getElementById('count');
 for(let i=1;i<=12;i++)sel.add(new Option(i,i));
 const $=id=>document.getElementById(id);
 let PERS=[];
-const nameBoxes=()=>[...document.querySelectorAll('#names input')];
 function renderNames(){
-  const old=nameBoxes().map(i=>i.value);
   $('names').innerHTML='';
-  PERS.slice(0,+sel.value).forEach((p,i)=>{const e=document.createElement('input');e.value=old[i]||p.name;e.placeholder=p.name;e.title=p.id;$('names').appendChild(e);});
+  PERS.forEach((p,i)=>{
+    const d=document.createElement('label');d.style.cssText='display:flex;gap:6px;align-items:center;margin:0';
+    const c=document.createElement('input');c.type='checkbox';c.checked=i<+sel.value;c.dataset.id=p.id;c.style.width='auto';c.onchange=()=>{sel.value=Math.max(1,document.querySelectorAll('#names input[type=checkbox]:checked').length);};
+    const e=document.createElement('input');e.type='text';e.value=p.name;e.placeholder=p.name;e.dataset.id=p.id;e.style.flex='1';
+    d.append(c,e);$('names').appendChild(d);
+  });
 }
 fetch('/api/personas').then(r=>r.json()).then(p=>{PERS=p;renderNames();});
-sel.onchange=renderNames;
+sel.onchange=renderNames; // "Select first N" shortcut; tick or untick individual people afterwards
 $('join').onclick=async()=>{
+  const people=[...document.querySelectorAll('#names input[type=checkbox]:checked')].map(c=>({id:c.dataset.id,name:document.querySelector(`#names input[type=text][data-id="${c.dataset.id}"]`).value}));
+  if(!people.length)return alert('Tick at least one person.');
   const r=await fetch('/api/join',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({meetingId:$('mid').value,passcode:$('pw').value,count:sel.value,names:nameBoxes().map(i=>i.value)})});
+    body:JSON.stringify({meetingId:$('mid').value,passcode:$('pw').value,people})});
   if(!r.ok)alert((await r.json()).error);
 };
 $('leave').onclick=()=>fetch('/api/leave',{method:'POST'});

@@ -90,3 +90,7 @@ Set `OPENAI_API_KEY` (or `REALTIME_API_KEY`) to have each participant write and 
 ## Script upload (speaker notes)
 In the web UI, upload a **.txt** file (or paste text) with one line or paragraph per speaker, formatted `Name: what they say` (see `sample-script.txt`). Names matching a joined participant use that person; other names are assigned a participant with a matching-gender voice (female name -> female voice, male name -> male voice). Lines are spoken verbatim with GPT Realtime when an API key is set, otherwise Edge neural voices, one speaker at a time.
 
+
+## Choosing people
+Tick any combination of the 12 people (max 12) and edit their names; the dropdown is a shortcut for 'first N'.
+

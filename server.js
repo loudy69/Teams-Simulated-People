@@ -128,6 +128,14 @@ app.post('/api/join', (req, res) => {
   if (!meetingId || !passcode) return res.status(400).json({ error: 'meetingId and passcode required' });
   const url = joinUrl(meetingId, passcode);
   const names = Array.isArray(req.body.names) ? req.body.names : [];
+  const pick = Array.isArray(req.body.people) ? req.body.people : null; // [{id,name}] chosen individually
+  if (pick) {
+    const sel = pick.map(x => ({ p: personas.find(p => p.id === x.id), name: x.name })).filter(x => x.p).slice(0, 12);
+    if (!sel.length) return res.status(400).json({ error: 'Select at least one person' });
+    const picked = sel.map(x => ({ ...x.p, name: String(x.name || '').trim().slice(0, 60) || x.p.name }));
+    picked.forEach((p, i) => setTimeout(() => join(p, url), i * 2500));
+    return res.json({ started: picked.map(p => p.name) });
+  }
   const chosen = personas.slice(0, n).map((p, i) => ({ ...p, name: String(names[i] || '').trim().slice(0, 60) || p.name }));
   chosen.forEach((p, i) => setTimeout(() => join(p, url), i * 2500)); // stagger launches
   res.json({ started: chosen.map(p => p.name) });
