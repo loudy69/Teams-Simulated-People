@@ -62,21 +62,49 @@ async function clickFirst(page, locators, timeout = 30000) {
   return false;
 }
 
-// Make sure the microphone is on. Returns true when it is confirmed (or was just switched) on.
+const MIC_SELECTORS = ['#mic-button', '[data-tid="toggle-mute"]', '[data-tid="prejoin-mic-toggle"]', '[role="switch"][aria-label*="mic" i]', '[role="switch"][aria-label*="audio" i]', 'button[aria-label*="mute" i]', 'button[aria-label*="microphone" i]', 'button[aria-label^="mic" i]'];
+
+async function findMic(page) {
+  for (const s of MIC_SELECTORS) {
+    const loc = page.locator(s);
+    const n = await loc.count().catch(() => 0);
+    for (let i = 0; i < n; i++) if (await loc.nth(i).isVisible().catch(() => false)) return loc.nth(i);
+  }
+  return null;
+}
+
+// true = mic on (unmuted), false = off, null = unknown
+async function micState(el) {
+  return el.evaluate(e => {
+    const label = ((e.getAttribute('aria-label') || '') + ' ' + (e.getAttribute('title') || '') + ' ' + (e.textContent || '')).toLowerCase().trim();
+    if (/unmute|turn on|mic is off|microphone is off|is muted|currently muted/.test(label)) return false;
+    if (/\bmute\b|turn off|mic is on|microphone is on|unmuted/.test(label)) return true;
+    if (e.hasAttribute('aria-checked')) return e.getAttribute('aria-checked') === 'true';
+    if (e.hasAttribute('aria-pressed')) return e.getAttribute('aria-pressed') !== 'true';
+    return null;
+  }).catch(() => null);
+}
+
+// Set the microphone on/off using real clicks (falls back to Teams' Ctrl+Shift+M). Returns true once the desired state is confirmed.
 async function setMic(page, wantOn) {
-  return page.evaluate((on) => {
-    const cands = [...document.querySelectorAll('#mic-button, [data-tid="toggle-mute"], [data-tid="prejoin-mic-toggle"], button[aria-label*="mic" i], [role="switch"][aria-label*="mic" i], [role="switch"][aria-label*="audio" i]')];
-    const el = cands.find(e => e.offsetParent !== null);
-    if (!el) return false;
-    const label = ((el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('title') || '') + ' ' + (el.textContent || '')).toLowerCase();
-    let isOn;
-    if (el.getAttribute('role') === 'switch' || el.hasAttribute('aria-checked')) isOn = el.getAttribute('aria-checked') === 'true';
-    else if (/unmute|turn on|mic is off|muted/.test(label) && !/^\s*mute\b/.test(label)) isOn = false;
-    else if (/\bmute\b|turn off|mic is on/.test(label)) isOn = true;
-    else isOn = el.getAttribute('aria-pressed') !== 'true';
-    if (isOn !== on) { el.click(); return 'toggled'; }
-    return true;
-  }, wantOn).catch(() => false);
+  try {
+    await page.bringToFront().catch(() => {});
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await page.mouse.move(400 + attempt * 20, 300).catch(() => {}); // wakes the auto-hiding call toolbar
+      const el = await findMic(page);
+      if (!el) { await page.waitForTimeout(600); continue; }
+      let st = await micState(el);
+      if (st === wantOn) return true;
+      if (st === null) { console.warn('setMic: unrecognised mic control', await el.evaluate(e => e.outerHTML.slice(0, 300)).catch(() => '')); return false; }
+      if (attempt < 3) await el.click({ timeout: 3000, force: true }).catch(() => {});
+      else await page.keyboard.press('Control+Shift+M');
+      await page.waitForTimeout(700);
+      st = await micState((await findMic(page)) || el);
+      if (st === wantOn) return true;
+    }
+  } catch (e) { console.warn('setMic', e.message.split('\n')[0]); }
+  console.warn(`setMic: could not confirm mic ${wantOn ? 'on' : 'off'}`);
+  return false;
 }
 
 async function join(persona, url) {
