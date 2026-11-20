@@ -22,3 +22,5 @@ VOICED CONVERSATIONS
 Version 2.0: voiced conversations. Optional: install Foundry Local for token-free dialogue; otherwise set OPENAI_API_KEY.
 
 Optional: set OPENAI_API_KEY before starting to use GPT Realtime voices (see README).
+
+Script upload: use a .txt file with 'Name: text' lines (sample-script.txt).

@@ -145,6 +145,77 @@ function realtimeLine(cfg, { voice, instructions, input }) {
   });
 }
 
+const MALE_VOICE = /Guy|Ryan|Thomas|Abeo|Andrew|William|Brian|Davis|Eric|Roger|Steffan|Christopher|Prabhat|Connor|Liam|Mitchell|Ethan|Henri|Conrad|Killian/i;
+const FEMALE_NAMES = new Set('sofia layla mei claire priya helen mary anna anne sarah sara emma olivia sophie lucy kate katie jane jennifer jessica emily laura rachel rebecca hannah megan lisa karen susan nicole amy alice grace fatima aisha yuki mia nina elena maria julia victoria charlotte amelia isabella natalie diana tanya zoe chloe ruth rosa eva ava'.split(' '));
+const MALE_NAMES = new Set('james omar daniel tom thomas kenji ben john david michael robert william richard joseph chris christopher matt matthew mark paul steve steven peter andrew adam alex alexander ryan jack luke sam samuel henry oliver george harry liam noah ethan raj ahmed ali hassan carlos jose juan pedro miguel kevin brian jason eric tim simon nick nicholas'.split(' '));
+const guessGender = n => { const f = n.trim().split(/\s+/)[0].toLowerCase(); return FEMALE_NAMES.has(f) ? 'f' : MALE_NAMES.has(f) ? 'm' : null; };
+const personGender = p => MALE_VOICE.test(p.voice || '') ? 'm' : 'f';
+
+// TXT script lines look like "Name: words". Lines without a name continue the previous speaker's paragraph.
+function parseScript(text) {
+  const out = [];
+  for (const raw of String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const m = line.match(/^\[?([A-Za-z][A-Za-z.'\- ]{0,40}?)\]?\s*[:\-–—]\s+(.+)$/) || line.match(/^([A-Za-z][A-Za-z.'\-]*(?: [A-Za-z][A-Za-z.'\-]*){0,3}):(.+)$/);
+    if (m) out.push({ name: m[1].trim(), text: m[2].trim() });
+    else if (out.length) out[out.length - 1].text += ' ' + line;
+  }
+  return out.filter(l => l.text.length > 1);
+}
+
+async function runScript({ script, people, speak }) {
+  Object.assign(state, { running: true, stop: false, transcript: [], error: null, speaking: null, mode: 'script' });
+  try {
+    const lines = parseScript(script);
+    if (!lines.length) throw new Error('No lines found. Use a .txt file with lines like "Sofia Reyes: Hello everyone."');
+    const rt = realtimeConfig(); let rtFailed = false;
+    state.engine = rt ? 'gpt-realtime' : 'edge-tts';
+    const norm = s => s.toLowerCase().replace(/[^a-z ]/g, '').trim();
+    const map = {}; const used = new Set();
+    const resolve = name => {
+      const k = norm(name);
+      if (map[k]) return map[k];
+      let p = people.find(x => norm(x.name) === k) || people.find(x => norm(x.name).split(' ')[0] === k.split(' ')[0] && !used.has(x.id));
+      if (!p) {
+        const g = guessGender(name);
+        const free = people.filter(x => !used.has(x.id));
+        p = (g && free.find(x => personGender(x) === g)) || free[0] || (g && people.find(x => personGender(x) === g)) || people[0];
+      }
+      used.add(p.id); map[k] = p; return p;
+    };
+    lines.forEach(l => { l.p = resolve(l.name); });
+    state.cast = Object.fromEntries(Object.entries(map).map(([, p]) => [p.name, personGender(p) === 'f' ? 'female voice' : 'male voice']));
+    const fi = { f: 0, m: 0 }, rtVoice = {};
+    people.forEach(p => { const g = personGender(p); rtVoice[p.id] = (g === 'f' ? RT_FEMALE : RT_MALE)[fi[g]++ % 6]; });
+    const gen = async l => {
+      if (rt && !rtFailed) {
+        try {
+          const instructions = `You are ${l.p.name}, a real person speaking in a business meeting on Microsoft Teams. Say the user's text aloud EXACTLY, word for word, adding nothing and omitting nothing. Deliver it like a warm, natural human colleague: relaxed pace, natural rhythm and intonation, never robotic or like reading a script.`;
+          const r = await realtimeLine(rt, { voice: rtVoice[l.p.id], instructions, input: `Say exactly this:\n\n${l.text}` });
+          return r.wav;
+        } catch (e) { rtFailed = true; console.warn('Realtime unavailable, falling back to Edge TTS:', e.message); }
+      }
+      return tts(l.text, l.p.voice);
+    };
+    let next = gen(lines[0]); next.catch(() => {});
+    for (let i = 0; i < lines.length && !state.stop; i++) {
+      const buf = await next;
+      next = i + 1 < lines.length ? gen(lines[i + 1]) : null; next?.catch(() => {});
+      state.transcript.push({ speaker: lines[i].p.name, text: lines[i].text });
+      state.speaking = lines[i].p.name;
+      await speak(lines[i].p.id, buf);
+      state.speaking = null;
+      if (next) await sleep(150 + Math.random() * 250);
+    }
+  } catch (e) {
+    state.error = e.message;
+    console.error('script error', e);
+  } finally {
+    state.running = false; state.speaking = null;
+  }
+}
+
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const state = { running: false, stop: false, transcript: [], error: null, speaking: null };
@@ -244,4 +315,4 @@ async function run({ industry, topic, people, speak, ...opts }) {
   }
 }
 
-module.exports = { INDUSTRIES, state, run };
+module.exports = { INDUSTRIES, state, run, runScript, parseScript };

@@ -86,3 +86,7 @@ If Foundry Local is installed and a chat model is downloaded (e.g. foundry model
 ## GPT Realtime voices
 Set `OPENAI_API_KEY` (or `REALTIME_API_KEY`) to have each participant write and speak their lines with GPT Realtime (default model `gpt-realtime-2.1`, override with `REALTIME_MODEL`; Azure: set `REALTIME_URL`). Each person gets a distinct natural voice, lines stream with ~0.1-0.3 s gaps, and the next line is generated while the current one plays. Without a key (or on error) it falls back to Foundry Local + Edge neural TTS. Disable with `REALTIME=off`.
 
+
+## Script upload (speaker notes)
+In the web UI, upload a **.txt** file (or paste text) with one line or paragraph per speaker, formatted `Name: what they say` (see `sample-script.txt`). Names matching a joined participant use that person; other names are assigned a participant with a matching-gender voice (female name -> female voice, male name -> male voice). Lines are spoken verbatim with GPT Realtime when an API key is set, otherwise Edge neural voices, one speaker at a time.
+

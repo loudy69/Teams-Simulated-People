@@ -163,6 +163,20 @@ app.post('/api/conversation/start', (req, res) => {
   });
   res.json({ ok: true });
 });
+const speakFn = async (id, buf) => {
+  const page = sessions.get(id).page;
+  await setMic(page, true); // unmute if Teams muted the guest
+  await page.waitForTimeout(300);
+  await page.evaluate(b => window.__speak(b), buf.toString('base64'));
+};
+app.post('/api/script/start', (req, res) => {
+  if (convo.state.running) return res.status(409).json({ error: 'Conversation already running' });
+  if (!allJoined()) return res.status(409).json({ error: 'Wait until all participants are admitted into the meeting' });
+  const script = String(req.body.script || '');
+  if (!convo.parseScript(script).length) return res.status(400).json({ error: 'No lines found. Use a .txt file with lines like "Name: text".' });
+  convo.runScript({ script, people: inMeeting(), speak: speakFn });
+  res.json({ ok: true });
+});
 app.post('/api/conversation/stop', (req, res) => { convo.state.stop = true; res.json({ ok: true }); });
 
 const PORT = process.env.PORT || 3000;
