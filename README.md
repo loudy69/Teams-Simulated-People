@@ -1,47 +1,113 @@
 # Teams Simulated People
 
-Fill a Microsoft Teams demo meeting with realistic, **clearly labelled simulated attendees** when real colleagues aren't available.
-
-Enter a Meeting ID and Passcode, choose how many people (1–12), and that many simulated participants join the call as web guests, each showing a looping, front-facing headshot video.
+Fill a Microsoft Teams demo meeting with realistic, **clearly labelled simulated attendees** when real colleagues aren't available. Each simulated person joins the meeting as a web guest, shows a looping front-facing video, joins muted, and then speaks lines from a script you upload - one person at a time - in a natural (non-robotic) voice.
 
 ![Web UI](docs/images/web-ui.png)
 
-## What it does
+> **Recommended setup:** run this tool on a **separate PC** from the one you host the Teams meeting on. The host PC then hears and records the simulated people exactly as it would real remote participants, with no echo or feedback.
 
-- **Web UI** with Meeting ID, Passcode and a 1–12 people-count dropdown.
-- **Automatic web join**: opens Teams in the browser (no "open desktop app" prompt) and joins as an anonymous guest.
-- **No audio**: each attendee picks "No audio" on the pre-join screen for a smooth, silent join.
-- **12 diverse personas**: 6 women and 6 men, multiracial and business-aligned, each with a natural looping video clip.
-- **Watermark**: every video carries *"Teams Demo - these are not real people"*, so nobody is misled.
+## Download
+
+Get the ready-to-install package, **`TeamsDemoAttendees-v2.zip`**, from the [Releases page](https://github.com/loudy69/Teams-Simulated-People/releases/latest). Extract it on the PC that will run the simulated people, run `Install.cmd`, then `Start.cmd`.
+
+## Demo process flow
+
+```mermaid
+flowchart TD
+    A["1. Create a .txt script<br/>'Name: what they say' per line"] --> B["2. Select the participants<br/>named in the script (up to 12)"]
+    B --> C["3. Enter the Teams meeting info<br/>Meeting ID + Passcode"]
+    C --> D["4. Click Join meeting<br/>each person joins as a web guest"]
+    D --> E["5. Host admits the virtual participants<br/>(they join muted)"]
+    E --> F["6. Click Play script<br/>lines are converted to speech (TTS)"]
+    F --> G["7. Each person unmutes individually,<br/>speaks their line, then mutes again"]
+    G --> H["8. Teams transcription (if enabled)<br/>captures the speech as normal"]
+```
+
+| Step | What you do | What happens |
+|---|---|---|
+| 1 | Create a **.txt** script (see below) with the virtual participants' names | One line or paragraph per speaker: `Name: what they say` |
+| 2 | Tick the participants that appear in the script; rename them if you like | Names typed in the UI are carried into the Teams join screen and locked |
+| 3 | Enter the Teams **Meeting ID** and **Passcode** | The meeting must allow anonymous (guest) join |
+| 4 | Click **Join meeting** | One Edge window per person opens Teams on the web, sets the name, turns the camera on and joins **muted** |
+| 5 | The **host admits** the guests from the lobby | Each guest shows as "in meeting" in the UI |
+| 6 | Upload the script and click **Play script** | Everyone is muted first; each line is converted to speech (female names get a female voice, male names a male voice) |
+| 7 | Watch the meeting | Only the current speaker unmutes, speaks, then goes back on mute before the next person starts. No overlapping speech |
+| 8 | Review the transcript/recording | If Teams transcription or recording is on, the speech is captured like any real participant |
+
+### Script format
+
+A plain **.txt** file, one entry per speaker turn:
+
+```
+Sofia Reyes: Good morning everyone, thanks for joining.
+James Okafor: Thanks Sofia. Let's start with the supplier delays.
+Sofia Reyes: Agreed. James, where do we stand?
+```
+
+Continuation lines are joined to the previous speaker. Names matching a selected participant use that person; any other name is assigned a participant of the matching gender. See `sample-script.txt`.
+
+## Project description
+
+### Purpose
+Demonstrations of Teams features (meeting transcription, recap, Copilot in Teams, recording, moderation and so on) are much more convincing with several people in the call. This project provides up to 12 simulated attendees so a single presenter can demo a realistic multi-person meeting without needing colleagues to attend.
+
+### Capabilities
+- **Web UI** (`http://localhost:3000`) to enter the Meeting ID and Passcode and choose any combination of up to 12 people, each with an editable display name.
+- **Automatic web join** as an anonymous guest in Microsoft Edge (no "open desktop app" prompt). The display name is typed in, verified and locked so it matches the UI.
+- **12 diverse personas**: 6 women and 6 men, multiracial and business-aligned, each with a natural looping front-facing video clip.
+- **Watermark** on every video: *"Teams Demo - these are not real people"*, so nobody is misled.
+- **Script playback**: upload a TXT script; each line is spoken by the named person.
+- **Natural voices**: female names use female voices and male names male voices, via GPT Realtime when an API key is set, otherwise Microsoft Edge neural voices. Gaps between speakers are short so the conversation flows.
+- **Mute discipline**: guests join muted; only the current speaker unmutes, and they mute again as soon as they finish. The mute state is verified from the Teams mic button and retried if Teams is slow to update.
+- **Recordable audio**: speech is fed into each guest's browser as a virtual microphone, so Teams transmits it like a real participant and it appears in recordings and transcripts.
 - **Remove all** button to make everyone leave after the demo.
 
 ![Simulated attendees](docs/images/simulated-attendees-gallery.png)
 
-## How it works
-
+### How it works
 1. Each persona is a separate Edge window driven by [Playwright](https://playwright.dev/).
-2. The window joins `https://teams.microsoft.com/v2/?meetingjoin=true#/meet/<id>?p=<passcode>&anon=true`.
-3. Chromium's fake-camera flags (`--use-file-for-fake-video-capture`) feed a pre-built, looping MJPEG clip in as the webcam.
-4. Joins are staggered by about 2.5 s to look natural.
+2. The window opens `https://teams.microsoft.com/v2/?meetingjoin=true#/meet/<id>?p=<passcode>&anon=true`.
+3. Chromium's fake-camera flags (`--use-file-for-fake-video-capture`) feed a looping MJPEG clip in as the webcam.
+4. An injected script replaces the microphone with a WebAudio `MediaStreamDestination` that is silent except while a line is being played.
+5. For each script line the server generates audio (GPT Realtime or Edge TTS), unmutes that guest in Teams, plays the audio into their virtual mic, then mutes them again.
+6. Joins are staggered by about 2.5 s to look natural. Guest windows run with `--mute-audio` so they don't play meeting audio back (no echo).
+
+### Architecture
+
+| Path | Purpose |
+|---|---|
+| `server.js` | Express API, Playwright join flow, virtual mic, mute/unmute control |
+| `conversation.js` | Script parsing, gender/voice selection, GPT Realtime and Edge TTS speech |
+| `public/index.html` | Web UI |
+| `personas.json` | The 12 personas (name, voice) |
+| `sample-script.txt` | Example script |
+| `scripts/` | Clip conversion and watermark tooling |
+| `install.ps1`, `Install.cmd`, `Start.cmd` | Installer and launcher |
 
 ## Requirements
 
 - Windows 10/11 with Microsoft Edge
 - Node.js LTS (the installer adds it through winget if missing)
-- A Teams meeting that **allows anonymous (guest) join**. The host may need to admit guests from the lobby.
+- Python (installed by the installer) for the free Edge neural voices
+- A Teams meeting that **allows anonymous (guest) join**; the host admits guests from the lobby
+- Optional: `OPENAI_API_KEY` (or `REALTIME_API_KEY`) for GPT Realtime voices. Default model `gpt-realtime-2.1` (override with `REALTIME_MODEL`; Azure: set `REALTIME_URL`; disable with `REALTIME=off`). Without a key it falls back to Edge neural voices.
 
 ## Install and run
+
+From the release zip: extract, run `Install.cmd`, then `Start.cmd` (opens http://localhost:3000).
+
+From source:
 
 ```powershell
 git clone https://github.com/loudy69/Teams-Simulated-People
 cd Teams-Simulated-People
-.\Install.cmd      # installs Node (if needed) and dependencies
-.\Start.cmd        # starts the service and opens http://localhost:3000
+.\Install.cmd
+.\Start.cmd
 ```
 
 ### Video clips
 
-Clips are not stored in this repo, because they are third-party stock footage. To build them:
+Clips are not stored in the source repo because they are third-party stock footage (the release zip includes them). To build them:
 
 ```powershell
 winget install Gyan.FFmpeg
@@ -49,54 +115,15 @@ npm run import-clips   # place or download source clips into clips\raw
 npm run convert        # builds clips\p01-p12.mjpeg with the watermark
 ```
 
-Source footage came from [Mixkit](https://mixkit.co/license/#videoFree) (free licence). Check the licence before reuse.
-To change the watermark text, edit `scripts/make-watermark.js`, delete `clips/watermark.png`, and re-run `npm run convert`.
+Source footage came from [Mixkit](https://mixkit.co/license/#videoFree) (free licence). Check the licence before reuse. To change the watermark text, edit `scripts/make-watermark.js`, delete `clips/watermark.png`, and re-run `npm run convert`.
 
-## Project layout
+## Troubleshooting
 
-| Path | Purpose |
-|---|---|
-| `server.js` | Express API and Playwright join logic |
-| `public/index.html` | Web UI |
-| `personas.json` | The 12 personas |
-| `scripts/` | Clip conversion and watermark tooling |
-| `install.ps1`, `Install.cmd`, `Start.cmd` | Installer and launcher |
+- **Echo:** the host PC's microphone is hearing its own speakers. Host from a separate PC (recommended), or use headphones.
+- **Mute/unmute not behaving:** every attempt is logged to `mic-debug.log` in the app folder (which Teams button was found and what state it showed). Send that file when reporting an issue.
+- **A guest never joins:** make sure the meeting allows anonymous join and the host admits them from the lobby.
 
 ## Responsible use
 
 For demos and testing only. Join only meetings you own or are authorised to use, and keep the watermark on. The attendees are not real people and must not be used to deceive.
 Microsoft Teams and Microsoft are trademarks of Microsoft. This is an unofficial demo tool; the join flow relies on the Teams web UI and may need updating when it changes.
-
-## Script playback
-Upload a **.txt** script (lines of `Name: what they say`), or paste it into the box, and once every simulated attendee has been admitted click **Play script**. Everyone is muted first; each speaker unmutes only for their own line, then mutes again.
-
-**Names:** each selected participant has a suggested name in an editable box - overwrite it before joining and the new name is used in Teams and in the dialogue.
-
-**Audio:** guests join with Computer audio on and the microphone unmuted; each voice is played through a virtual microphone, so the host hears (and can record) it like any other participant. The host must admit the guests and not mute them.
-
-- An LLM writes one line at a time; each speaker directly responds to the previous one and no two people speak at once (strict turn-taking with natural pauses).
-- Each persona has a distinct neural (non-robotic) voice via Microsoft Edge neural TTS (`pip install edge-tts`, needs Python).
-- Speech is fed to each attendee's browser as a virtual microphone.
-- Set `OPENAI_API_KEY` (or `LLM_API_KEY`, `LLM_ENDPOINT`, `LLM_MODEL`, or `GITHUB_TOKEN`) before starting. `MAX_TURNS` caps the length (default 30).
-- Simulated attendees do not listen to real humans; they only respond to each other.
-
-### Local LLM (Foundry Local)
-If Foundry Local is installed and a chat model is downloaded (e.g. foundry model download qwen2.5-1.5b), the service auto-detects it and uses it for dialogue - no token cost. Override with FOUNDRY_MODEL, or LLM_PROVIDER=cloud to use OPENAI_API_KEY/LLM_API_KEY instead. Voices use free Edge neural TTS (python + edge-tts, installed by install.ps1).
-
-## GPT Realtime voices
-Set `OPENAI_API_KEY` (or `REALTIME_API_KEY`) to have each participant write and speak their lines with GPT Realtime (default model `gpt-realtime-2.1`, override with `REALTIME_MODEL`; Azure: set `REALTIME_URL`). Each person gets a distinct natural voice, lines stream with ~0.1-0.3 s gaps, and the next line is generated while the current one plays. Without a key (or on error) it falls back to Foundry Local + Edge neural TTS. Disable with `REALTIME=off`.
-
-
-## Script upload (speaker notes)
-In the web UI, upload a **.txt** file (or paste text) with one line or paragraph per speaker, formatted `Name: what they say` (see `sample-script.txt`). Names matching a joined participant use that person; other names are assigned a participant with a matching-gender voice (female name -> female voice, male name -> male voice). Lines are spoken verbatim with GPT Realtime when an API key is set, otherwise Edge neural voices, one speaker at a time.
-
-
-## Choosing people
-Tick any combination of the 12 people (max 12) and edit their names.
-
-
-Echo: guest windows run with --mute-audio so only the host's own Teams plays meeting audio (no duplicate delayed copies). If testing on the same PC as the host, use headphones.
-
-
-Mute behaviour: guests join muted and unmute only while speaking, then mute again.
-
