@@ -37,9 +37,11 @@ const AUDIO_INIT = `(() => {
     const wantAudio = c && c.audio;
     const wantVideo = c && c.video;
     const s = wantVideo ? await orig({ ...c, audio: false }) : new MediaStream();
-    if (wantAudio) { await ac.resume().catch(() => {}); dest.stream.getAudioTracks().forEach(t => s.addTrack(t.clone())); }
+    if (wantAudio) { await ac.resume().catch(() => {}); dest.stream.getAudioTracks().forEach(t => { const c = t.clone(); (window.__mics = window.__mics || []).push(c); s.addTrack(c); }); }
     return s;
   };
+  // Reports whether Teams is currently sending our mic track: true = unmuted, false = muted, null = unknown
+  window.__micOn = () => { const l = (window.__mics || []).filter(t => t.readyState === 'live'); return l.length ? l.some(t => t.enabled && !t.muted) : null; };
 })();`;
 const sessions = new Map(); // personaId -> { status, browser }
 const setStatus = (id, status) => { const s = sessions.get(id) || {}; s.status = status; sessions.set(id, s); console.log(id, status); };
@@ -85,25 +87,37 @@ async function micState(el) {
   }).catch(() => null);
 }
 
-// Set the microphone on/off using real clicks (falls back to Teams' Ctrl+Shift+M). Returns true once the desired state is confirmed.
+// Current mic state: prefers the real track state (is Teams sending our audio?), else the button label
+async function curState(page, el) {
+  const t = await page.evaluate(() => window.__micOn && window.__micOn()).catch(() => null);
+  if (t === true || t === false) return t;
+  return el ? micState(el) : null;
+}
+
+async function dumpControls(page, tag) {
+  const info = await page.evaluate(() => [...document.querySelectorAll('button,[role="switch"],[role="button"],[role="checkbox"]')]
+    .filter(e => /mic|mute|audio/i.test((e.getAttribute('aria-label') || '') + (e.id || '') + (e.getAttribute('data-tid') || '') + (e.title || '')))
+    .map(e => e.outerHTML.slice(0, 260))).catch(() => []);
+  try { fs.appendFileSync(path.join(__dirname, 'mic-debug.log'), `\n[${new Date().toISOString()}] ${tag}\n${info.join('\n')}\n`); } catch {}
+}
+
+// Set the microphone on/off. Verifies via the real track state / button; tries a real click, then Ctrl+Shift+M.
 async function setMic(page, wantOn) {
   try {
     await page.bringToFront().catch(() => {});
-    for (let attempt = 0; attempt < 4; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
       await page.mouse.move(400 + attempt * 20, 300).catch(() => {}); // wakes the auto-hiding call toolbar
       const el = await findMic(page);
-      if (!el) { await page.waitForTimeout(600); continue; }
-      let st = await micState(el);
+      const st = await curState(page, el);
       if (st === wantOn) return true;
-      if (st === null) { console.warn('setMic: unrecognised mic control', await el.evaluate(e => e.outerHTML.slice(0, 300)).catch(() => '')); return false; }
-      if (attempt < 3) await el.click({ timeout: 3000, force: true }).catch(() => {});
-      else await page.keyboard.press('Control+Shift+M');
-      await page.waitForTimeout(700);
-      st = await micState((await findMic(page)) || el);
-      if (st === wantOn) return true;
+      if (el && attempt % 2 === 0) await el.click({ timeout: 3000, force: true }).catch(() => {});
+      else { await page.mouse.click(5, 5).catch(() => {}); await page.keyboard.press('Control+Shift+M'); }
+      await page.waitForTimeout(800);
+      if ((await curState(page, (await findMic(page)) || el)) === wantOn) return true;
     }
   } catch (e) { console.warn('setMic', e.message.split('\n')[0]); }
-  console.warn(`setMic: could not confirm mic ${wantOn ? 'on' : 'off'}`);
+  console.warn(`setMic: could not confirm mic ${wantOn ? 'on' : 'off'} (see mic-debug.log)`);
+  await dumpControls(page, `could not set mic ${wantOn}`);
   return false;
 }
 
