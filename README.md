@@ -97,3 +97,6 @@ Tick any combination of the 12 people (max 12) and edit their names.
 
 Echo: guest windows run with --mute-audio so only the host's own Teams plays meeting audio (no duplicate delayed copies). If testing on the same PC as the host, use headphones.
 
+
+Mute behaviour: guests join muted and unmute only while speaking, then mute again.
+

@@ -122,14 +122,14 @@ async function join(persona, url) {
     await lockName();
     // Computer audio ON with the microphone enabled (fed by the injected virtual mic)
     await clickFirst(page, ['[data-tid="prejoin-audio-option-computer"]', 'label:has-text("Computer audio")', 'text=Computer audio'], 5000);
-    await setMic(page, true, 'prejoin');
+    await setMic(page, false, 'prejoin'); // join muted
     setStatus(persona.id, 'joining');
     await lockName().catch(() => {}); // Teams can reset the field when audio options change
     await clickFirst(page, ['button:has-text("Join now")', '[data-tid="prejoin-join-button"]'], 30000);
     setStatus(persona.id, 'waiting in lobby - admit from the host');
     const inMeeting = page.locator('[data-tid="hangup-button"], #hangup-button, button[aria-label^="Leave"]').first();
     inMeeting.waitFor({ timeout: 0 }).then(async () => {
-      for (let i = 0; i < 5; i++) { if (await setMic(page, true, 'meeting')) break; await page.waitForTimeout(1000); }
+      for (let i = 0; i < 5; i++) { await page.waitForTimeout(1000); if (await setMic(page, false, 'meeting')) break; }
       setStatus(persona.id, 'in meeting');
     }).catch(() => {});
     await page.waitForEvent('close', { timeout: 0 }).catch(() => {});
@@ -174,6 +174,15 @@ app.get('/api/conversation', (req, res) => res.json({ ...convo.state, ready: inM
 const inMeeting = () => personas.filter(p => sessions.get(p.id)?.status === 'in meeting').map(p => ({ ...p, name: sessions.get(p.id).name || p.name }));
 const allJoined = () => sessions.size > 0 && [...sessions.values()].every(s => s.status === 'in meeting');
 
+// Guests stay muted; each unmutes only while speaking, then mutes again
+const speakFn = async (id, buf) => {
+  const page = sessions.get(id).page;
+  for (let i = 0; i < 4; i++) { if (await setMic(page, true)) break; await page.waitForTimeout(500); }
+  await page.waitForTimeout(500); // let Teams start sending mic audio before speech begins
+  try { await page.evaluate(b => window.__speak(b), buf.toString('base64')); }
+  finally { await page.waitForTimeout(200); await setMic(page, false); }
+};
+
 app.post('/api/conversation/start', (req, res) => {
   const { industry, topic } = req.body;
   if (convo.state.running) return res.status(409).json({ error: 'Conversation already running' });
@@ -182,21 +191,10 @@ app.post('/api/conversation/start', (req, res) => {
   const people = inMeeting();
   convo.run({
     industry: industry || 'General business', topic: topic.trim(), people, minutes: req.body.minutes,
-    speak: async (id, buf) => {
-      const page = sessions.get(id).page;
-      await setMic(page, true); // unmute if Teams muted the guest
-      await page.waitForTimeout(300);
-      await page.evaluate(b => window.__speak(b), buf.toString('base64'));
-    }
+    speak: speakFn
   });
   res.json({ ok: true });
 });
-const speakFn = async (id, buf) => {
-  const page = sessions.get(id).page;
-  await setMic(page, true); // unmute if Teams muted the guest
-  await page.waitForTimeout(300);
-  await page.evaluate(b => window.__speak(b), buf.toString('base64'));
-};
 app.post('/api/script/start', (req, res) => {
   if (convo.state.running) return res.status(409).json({ error: 'Conversation already running' });
   if (!allJoined()) return res.status(409).json({ error: 'Wait until all participants are admitted into the meeting' });
