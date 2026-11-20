@@ -89,10 +89,12 @@ async function micState(el) {
 
 // Current mic state: prefers the real track state (is Teams sending our audio?), else the button label
 async function curState(page, el) {
+  if (el) { const b = await micState(el); if (b === true || b === false) return b; }
   const t = await page.evaluate(() => window.__micOn && window.__micOn()).catch(() => null);
-  if (t === true || t === false) return t;
-  return el ? micState(el) : null;
+  return t === true || t === false ? t : null;
 }
+
+const micLog = (msg) => { try { fs.appendFileSync(path.join(__dirname, 'mic-debug.log'), `[${new Date().toISOString()}] ${msg}\n`); } catch {} };
 
 async function dumpControls(page, tag) {
   const info = await page.evaluate(() => [...document.querySelectorAll('button,[role="switch"],[role="button"],[role="checkbox"]')]
@@ -109,6 +111,8 @@ async function setMic(page, wantOn) {
       await page.mouse.move(400 + attempt * 20, 300).catch(() => {}); // wakes the auto-hiding call toolbar
       const el = await findMic(page);
       const st = await curState(page, el);
+      const html = el ? await el.evaluate(e => e.outerHTML.slice(0, 200)).catch(() => '?') : 'NO BUTTON FOUND';
+      micLog(`want=${wantOn} attempt=${attempt} state=${st} el=${html}`);
       if (st === wantOn) return true;
       if (el && attempt % 2 === 0) await el.click({ timeout: 3000, force: true }).catch(() => {});
       else { await page.mouse.click(5, 5).catch(() => {}); await page.keyboard.press('Control+Shift+M'); }
@@ -231,19 +235,21 @@ app.post('/api/conversation/start', (req, res) => {
   if (!allJoined()) return res.status(409).json({ error: 'Wait until all participants are admitted into the meeting' });
   if (!topic || !topic.trim()) return res.status(400).json({ error: 'Enter a topic brief' });
   const people = inMeeting();
-  convo.run({
+  res.json({ ok: true });
+  Promise.all(people.map(p => setMic(sessions.get(p.id).page, false))).finally(() => convo.run({
     industry: industry || 'General business', topic: topic.trim(), people, minutes: req.body.minutes,
     speak: speakFn
-  });
-  res.json({ ok: true });
+  }));
 });
 app.post('/api/script/start', (req, res) => {
   if (convo.state.running) return res.status(409).json({ error: 'Conversation already running' });
   if (!allJoined()) return res.status(409).json({ error: 'Wait until all participants are admitted into the meeting' });
   const script = String(req.body.script || '');
   if (!convo.parseScript(script).length) return res.status(400).json({ error: 'No lines found. Use a .txt file with lines like "Name: text".' });
-  convo.runScript({ script, people: inMeeting(), speak: speakFn });
   res.json({ ok: true });
+    // Everyone goes on mute first; each speaker then unmutes only for their own line
+    Promise.all(inMeeting().map(p => setMic(sessions.get(p.id).page, false))).finally(() =>
+      convo.runScript({ script, people: inMeeting(), speak: speakFn }));
 });
 app.post('/api/conversation/stop', (req, res) => { convo.state.stop = true; res.json({ ok: true }); });
 
