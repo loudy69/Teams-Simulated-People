@@ -67,8 +67,8 @@ To change the watermark text, edit `scripts/make-watermark.js`, delete `clips/wa
 For demos and testing only. Join only meetings you own or are authorised to use, and keep the watermark on. The attendees are not real people and must not be used to deceive.
 Microsoft Teams and Microsoft are trademarks of Microsoft. This is an unofficial demo tool; the join flow relies on the Teams web UI and may need updating when it changes.
 
-## Voiced conversations (new)
-Pick an **industry** (alphabetical list; Retail and Insurance come with default topic briefs), type a **topic brief**, set the **meeting length** in minutes (the conversation wraps up and closes at that time; 0 = no limit), and once every simulated attendee has been admitted click **Start conversation**.
+## Script playback
+Upload a **.txt** script (lines of `Name: what they say`), or paste it into the box, and once every simulated attendee has been admitted click **Play script**. Everyone is muted first; each speaker unmutes only for their own line, then mutes again.
 
 **Names:** each selected participant has a suggested name in an editable box - overwrite it before joining and the new name is used in Teams and in the dialogue.
 

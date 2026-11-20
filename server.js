@@ -107,7 +107,7 @@ async function dumpControls(page, tag) {
 async function setMic(page, wantOn) {
   try {
     await page.bringToFront().catch(() => {});
-    for (let attempt = 0; attempt < 5; attempt++) {
+    for (let attempt = 0; attempt < 4; attempt++) {
       await page.mouse.move(400 + attempt * 20, 300).catch(() => {}); // wakes the auto-hiding call toolbar
       const el = await findMic(page);
       const st = await curState(page, el);
@@ -116,8 +116,13 @@ async function setMic(page, wantOn) {
       if (st === wantOn) return true;
       if (el && attempt % 2 === 0) await el.click({ timeout: 3000, force: true }).catch(() => {});
       else { await page.mouse.click(5, 5).catch(() => {}); await page.keyboard.press('Control+Shift+M'); }
-      await page.waitForTimeout(800);
-      if ((await curState(page, (await findMic(page)) || el)) === wantOn) return true;
+      // Slower PCs take longer to update Teams' mute state: wait for it to settle before any retry (a retry would toggle it back)
+      for (let w = 0; w < 12; w++) {
+        await page.waitForTimeout(500);
+        const now = await curState(page, (await findMic(page)) || el);
+        if (now === wantOn) { micLog(`want=${wantOn} confirmed after ${(w + 1) * 500}ms`); return true; }
+      }
+      micLog(`want=${wantOn} NOT confirmed after attempt ${attempt}`);
     }
   } catch (e) { console.warn('setMic', e.message.split('\n')[0]); }
   console.warn(`setMic: could not confirm mic ${wantOn ? 'on' : 'off'} (see mic-debug.log)`);
@@ -213,8 +218,6 @@ app.post('/api/leave', async (req, res) => {
   res.json({ ok: true });
 });
 
-const ind = Object.keys(convo.INDUSTRIES).sort((a, b) => a.localeCompare(b));
-app.get('/api/industries', (req, res) => res.json(ind.map(n => ({ name: n, brief: convo.INDUSTRIES[n] }))));
 app.get('/api/conversation', (req, res) => res.json({ ...convo.state, ready: inMeeting().length > 0 && allJoined() }));
 
 const inMeeting = () => personas.filter(p => sessions.get(p.id)?.status === 'in meeting').map(p => ({ ...p, name: sessions.get(p.id).name || p.name }));
@@ -223,24 +226,12 @@ const allJoined = () => sessions.size > 0 && [...sessions.values()].every(s => s
 // Guests stay muted; each unmutes only while speaking, then mutes again
 const speakFn = async (id, buf) => {
   const page = sessions.get(id).page;
-  for (let i = 0; i < 4; i++) { if (await setMic(page, true)) break; await page.waitForTimeout(500); }
+  for (let i = 0; i < 2; i++) { if (await setMic(page, true)) break; }
   await page.waitForTimeout(500); // let Teams start sending mic audio before speech begins
   try { await page.evaluate(b => window.__speak(b), buf.toString('base64')); }
   finally { await page.waitForTimeout(200); await setMic(page, false); }
 };
 
-app.post('/api/conversation/start', (req, res) => {
-  const { industry, topic } = req.body;
-  if (convo.state.running) return res.status(409).json({ error: 'Conversation already running' });
-  if (!allJoined()) return res.status(409).json({ error: 'Wait until all participants are admitted into the meeting' });
-  if (!topic || !topic.trim()) return res.status(400).json({ error: 'Enter a topic brief' });
-  const people = inMeeting();
-  res.json({ ok: true });
-  Promise.all(people.map(p => setMic(sessions.get(p.id).page, false))).finally(() => convo.run({
-    industry: industry || 'General business', topic: topic.trim(), people, minutes: req.body.minutes,
-    speak: speakFn
-  }));
-});
 app.post('/api/script/start', (req, res) => {
   if (convo.state.running) return res.status(409).json({ error: 'Conversation already running' });
   if (!allJoined()) return res.status(409).json({ error: 'Wait until all participants are admitted into the meeting' });

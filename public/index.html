@@ -21,18 +21,13 @@ li{margin:4px 0}
 <label>Choose participants (tick to include, max 12; names can be overwritten)</label>
 <div id="names" style="display:grid;grid-template-columns:1fr 1fr;gap:6px"></div>
 <button id="join">Join meeting</button><button class="leave" id="leave">Remove all</button>
-<h3>Conversation</h3>
-<label>Meeting industry / tone</label><select id="industry"></select>
-<label>Meeting length (minutes, 0 = no limit)</label>
-<input id="mins" type="number" min="0" max="60" value="3" style="width:100px">
-<label>Topic brief</label><textarea id="topic" rows="3" style="width:100%;padding:8px;font-size:15px;box-sizing:border-box" placeholder="Short description of what the meeting is about"></textarea>
-<button id="start" disabled>Start conversation</button><button class="leave" id="stop">Stop</button>
-<div style="margin-top:14px;padding:10px;border:1px dashed #888;border-radius:6px">
-<label><b>Or play a script (speaker notes)</b> &ndash; upload a <b>.TXT file only</b></label>
+<h3>Play script</h3>
+<div style="padding:10px;border:1px dashed #888;border-radius:6px">
+<label><b>Upload a script (speaker notes)</b> &ndash; <b>.TXT file only</b></label>
 <div style="font-size:13px;opacity:.8;margin:4px 0">One line or paragraph per speaker, formatted <code>Name: what they say</code>. Female names get a female voice, male names a male voice. Names matching a joined participant use that person; other names are assigned to a participant of the matching gender.</div>
 <input id="scriptfile" type="file" accept=".txt,text/plain">
 <textarea id="script" rows="5" style="width:100%;padding:8px;font-size:14px;box-sizing:border-box;margin-top:6px" placeholder="Sofia Reyes: Good morning everyone, thanks for joining.&#10;James Okafor: Thanks Sofia. Let's start with the supplier delays."></textarea>
-<button id="playscript" disabled>Play script</button>
+<button id="playscript" disabled>Play script</button><button class="leave" id="stop">Stop</button>
 </div>
 <div id="cstat" style="margin-top:10px;color:#555"></div>
 <div id="tx" style="margin-top:8px;max-height:260px;overflow:auto;border:1px solid #ddd;padding:8px;display:none"></div>
@@ -63,17 +58,14 @@ async function refresh(){
   const esc=t=>String(t).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
   $('list').innerHTML=p.map(x=>`<li><b>${esc(nm[x.id]||x.name)}</b> — ${s[x.id]||'idle'}${x.hasClip?'':' (no video clip yet)'}</li>`).join('');
 }
-fetch('/api/industries').then(r=>r.json()).then(l=>{window.IND=l;l.forEach(i=>$('industry').add(new Option(i.name,i.name)));$('industry').onchange=()=>{const b=IND.find(i=>i.name===$('industry').value).brief;if(b||!$('topic').value)$('topic').value=b;};$('industry').onchange();});
-$('start').onclick=async()=>{const r=await fetch('/api/conversation/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({industry:$('industry').value,topic:$('topic').value,minutes:$('mins').value})});if(!r.ok)alert((await r.json()).error);};
 $('stop').onclick=()=>fetch('/api/conversation/stop',{method:'POST'});
 $('scriptfile').onchange=e=>{const f=e.target.files[0];if(!f)return;if(!/\.txt$/i.test(f.name)){alert('Please upload a .txt file.');e.target.value='';return;}const r=new FileReader();r.onload=()=>{$('script').value=r.result;};r.readAsText(f);};
 $('playscript').onclick=async()=>{const r=await fetch('/api/script/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({script:$('script').value})});if(!r.ok)alert((await r.json()).error);};
 const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 async function convo(){
   const c=await fetch('/api/conversation').then(r=>r.json());
-  $('start').disabled=!c.ready||c.running;
   $('playscript').disabled=!c.ready||c.running||!$('script').value.trim();
-  $('cstat').textContent=c.error?'Error: '+c.error:c.running?(c.speaking?c.speaking+' is speaking...':'Generating...'):c.ready?'All participants are in the meeting. Ready to start.':'Start becomes available once all participants are admitted.';
+  $('cstat').textContent=c.error?'Error: '+c.error:c.running?(c.speaking?c.speaking+' is speaking...':'Playing script...'):c.ready?'All participants are in the meeting. Ready to play the script.':'Play script becomes available once all participants are admitted.';
   $('tx').style.display=c.transcript.length?'block':'none';
   $('tx').innerHTML=c.transcript.map(t=>`<p><b>${esc(t.speaker)}:</b> ${esc(t.text)}</p>`).join('');
 }
