@@ -92,5 +92,5 @@ In the web UI, upload a **.txt** file (or paste text) with one line or paragraph
 
 
 ## Choosing people
-Tick any combination of the 12 people (max 12) and edit their names; the dropdown is a shortcut for 'first N'.
+Tick any combination of the 12 people (max 12) and edit their names.
 
