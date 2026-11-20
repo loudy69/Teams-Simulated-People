@@ -100,18 +100,31 @@ async function join(persona, url) {
     await page.keyboard.press('Escape').catch(() => {});
     const nameBox = page.locator('input[data-tid="prejoin-display-name-input"], input[placeholder*="name" i]').first();
     await nameBox.waitFor({ timeout: 60000 });
-    await nameBox.fill(persona.name);
+    // Type the name with real keystrokes so Teams' own state registers it, and verify it stuck
+    const setName = async () => {
+      for (let i = 0; i < 6; i++) {
+        const cur = await nameBox.inputValue().catch(() => '');
+        if (cur === persona.name) return true;
+        await nameBox.evaluate(el => { el.readOnly = false; el.removeAttribute('aria-readonly'); el.style.pointerEvents = ''; }).catch(() => {});
+        await nameBox.click({ timeout: 3000 }).catch(() => {});
+        await page.keyboard.press('Control+A');
+        await page.keyboard.press('Delete');
+        await page.keyboard.type(persona.name, { delay: 25 });
+        await page.waitForTimeout(400);
+      }
+      return (await nameBox.inputValue().catch(() => '')) === persona.name;
+    };
     // Lock the display name so it stays as entered in the web UI (no manual edits in the Teams window)
-    const lockName = () => nameBox.evaluate((el, v) => {
-      if (el.value !== v) { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(el, v); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }
-      el.readOnly = true; el.setAttribute('aria-readonly', 'true'); el.style.pointerEvents = 'none';
-    }, persona.name);
+    const lockName = async () => {
+      await setName();
+      await nameBox.evaluate(el => { el.readOnly = true; el.setAttribute('aria-readonly', 'true'); }).catch(() => {});
+    };
     await lockName();
     // Computer audio ON with the microphone enabled (fed by the injected virtual mic)
     await clickFirst(page, ['[data-tid="prejoin-audio-option-computer"]', 'label:has-text("Computer audio")', 'text=Computer audio'], 5000);
     await setMic(page, true, 'prejoin');
     setStatus(persona.id, 'joining');
-    await lockName().catch(() => {});
+    await lockName().catch(() => {}); // Teams can reset the field when audio options change
     await clickFirst(page, ['button:has-text("Join now")', '[data-tid="prejoin-join-button"]'], 30000);
     setStatus(persona.id, 'waiting in lobby - admit from the host');
     const inMeeting = page.locator('[data-tid="hangup-button"], #hangup-button, button[aria-label^="Leave"]').first();
